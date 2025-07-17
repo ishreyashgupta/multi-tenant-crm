@@ -1,0 +1,19 @@
+// MongoDB initialization script for Docker
+db = db.getSiblingDB('saasify');
+
+// Create collections
+db.createCollection('tenants');
+db.createCollection('users');
+db.createCollection('contacts');
+
+// Create indexes
+db.users.createIndex({ "email": 1 }, { unique: true });
+db.users.createIndex({ "tenantId": 1 });
+
+db.contacts.createIndex({ "tenantId": 1, "userId": 1 });
+db.contacts.createIndex({ "tenantId": 1, "email": 1 });
+db.contacts.createIndex({ "tenantId": 1, "isActive": 1 });
+
+db.tenants.createIndex({ "name": 1 }, { unique: true });
+
+print('Database initialized successfully!');
