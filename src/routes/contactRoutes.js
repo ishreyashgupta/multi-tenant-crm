@@ -1,19 +1,32 @@
 const express = require("express");
 const router = express.Router();
-const authController = require("../controllers/authController");
-const { validateRegister, validateLogin, handleValidationErrors } = require("../middleware/validation");
+const contactController = require("../controllers/contactController");
+const { authenticate, authorize, tenantIsolation } = require("../middleware/auth");
+const { validateContact, handleValidationErrors } = require("../middleware/validation");
 
-// Authentication routes
-router.post("/register", 
-  validateRegister, 
+// Apply authentication to all routes
+router.use(authenticate);
+router.use(tenantIsolation);
+
+// Contact CRUD routes
+router.post("/", 
+  validateContact, 
   handleValidationErrors, 
-  authController.register
+  contactController.createContact
 );
 
-router.post("/login", 
-  validateLogin, 
+router.get("/", contactController.getContacts);
+
+router.get("/stats", contactController.getContactStats);
+
+router.get("/:id", contactController.getContact);
+
+router.put("/:id", 
+  validateContact, 
   handleValidationErrors, 
-  authController.login
+  contactController.updateContact
 );
+
+router.delete("/:id", contactController.deleteContact);
 
 module.exports = router;
