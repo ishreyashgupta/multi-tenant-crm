@@ -337,6 +337,6 @@ This project is licensed under the ISC License.
 
 **Built with ❤️ for modern SaaS applications**
 
-[Report Bug](https://github.com/your-username/saasify-backend/issues) · [Request Feature](https://github.com/your-username/saasify-backend/issues)
+[Report Bug](https://github.com/ishreyashgupta/saasify-backend/issues) · [Request Feature](https://github.com/ishreyashgupta/saasify-backend/issues)
 
 </div>
