@@ -1,43 +1,19 @@
-const jwt = require("jsonwebtoken");
-const User = require("../models/User");
+const express = require("express");
+const router = express.Router();
+const authController = require("../controllers/authController");
+const { validateRegister, validateLogin, handleValidationErrors } = require("../middleware/validation");
 
-// JWT Authentication Middleware
-exports.authenticate = async (req, res, next) => {
-  try {
-    const token = req.header("Authorization")?.replace("Bearer ", "");
-    
-    if (!token) {
-      return res.status(401).json({ error: "Access denied. No token provided." });
-    }
+// Authentication routes
+router.post("/register", 
+  validateRegister, 
+  handleValidationErrors, 
+  authController.register
+);
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await User.findById(decoded.userId).populate("tenantId");
-    
-    if (!user) {
-      return res.status(401).json({ error: "Invalid token." });
-    }
+router.post("/login", 
+  validateLogin, 
+  handleValidationErrors, 
+  authController.login
+);
 
-    req.user = user;
-    req.tenantId = user.tenantId._id;
-    next();
-  } catch (error) {
-    res.status(401).json({ error: "Invalid token." });
-  }
-};
-
-// Role-based Authorization Middleware
-exports.authorize = (...roles) => {
-  return (req, res, next) => {
-    if (!roles.includes(req.user.role)) {
-      return res.status(403).json({ error: "Access denied. Insufficient permissions." });
-    }
-    next();
-  };
-};
-
-// Tenant Isolation Middleware
-exports.tenantIsolation = (req, res, next) => {
-  // Ensure all queries are scoped to the current tenant
-  req.tenantFilter = { tenantId: req.tenantId };
-  next();
-};
+module.exports = router;
