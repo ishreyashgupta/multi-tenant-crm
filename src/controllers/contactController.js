@@ -1,103 +1,199 @@
-const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
-const User = require("../models/User");
-const Tenant = require("../models/Tenant");
+const Contact = require("../models/Contact");
 
-exports.register = async (req, res) => {
+// Create a new contact
+exports.createContact = async (req, res) => {
   try {
-    const { tenantName, email, password } = req.body;
-    
-    // Check if user already exists
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return res.status(400).json({ error: "User already exists with this email" });
+    const contactData = {
+      ...req.body,
+      tenantId: req.tenantId,
+      userId: req.user._id
+    };
+
+    // Check if contact with same email exists in this tenant
+    const existingContact = await Contact.findOne({
+      tenantId: req.tenantId,
+      email: req.body.email
+    });
+
+    if (existingContact) {
+      return res.status(400).json({ error: "Contact with this email already exists" });
     }
 
-    // Check if tenant already exists
-    const existingTenant = await Tenant.findOne({ name: tenantName });
-    if (existingTenant) {
-      return res.status(400).json({ error: "Tenant already exists with this name" });
-    }
-    
-    const hashedPassword = await bcrypt.hash(password, 12);
-    
-    // Create tenant first
-    const tenant = new Tenant({ name: tenantName });
-    await tenant.save();
+    const contact = new Contact(contactData);
+    await contact.save();
 
-    // Create admin user for the tenant
-    const user = new User({
-      tenantId: tenant._id,
-      email,
-      password: hashedPassword,
-      role: "admin",
+    res.status(201).json({
+      message: "Contact created successfully",
+      contact
     });
-    await user.save();
-
-    const token = jwt.sign(
-      { 
-        userId: user._id, 
-        tenantId: tenant._id, 
-        role: user.role 
-      }, 
-      process.env.JWT_SECRET, 
-      { expiresIn: "7d" }
-    );
-
-    res.status(201).json({ 
-      message: "Registration successful",
-      token, 
-      user: {
-        id: user._id,
-        email: user.email,
-        role: user.role,
-        tenantId: tenant._id,
-        tenantName: tenant.name
-      }
-    });
-  } catch (err) {
-    console.error("Registration error:", err);
+  } catch (error) {
+    console.error("Create contact error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 };
 
-exports.login = async (req, res) => {
+// Get all contacts for the tenant
+exports.getContacts = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { page = 1, limit = 10, search, tag } = req.query;
+    const skip = (page - 1) * limit;
+
+    // Build filter
+    const filter = { tenantId: req.tenantId, isActive: true };
     
-    const user = await User.findOne({ email }).populate("tenantId");
-    if (!user) {
-      return res.status(404).json({ error: "Invalid credentials" });
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+        { company: { $regex: search, $options: "i" } },
+        { phone: { $regex: search, $options: "i" } }
+      ];
     }
 
-    const validPassword = await bcrypt.compare(password, user.password);
-    if (!validPassword) {
-      return res.status(400).json({ error: "Invalid credentials" });
+    if (tag) {
+      filter.tags = { $in: [tag] };
     }
 
-    const token = jwt.sign(
-      { 
-        userId: user._id, 
-        tenantId: user.tenantId._id, 
-        role: user.role 
-      }, 
-      process.env.JWT_SECRET, 
-      { expiresIn: "7d" }
-    );
+    const contacts = await Contact.find(filter)
+      .populate("userId", "email")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
 
-    res.json({ 
-      message: "Login successful",
-      token, 
-      user: {
-        id: user._id,
-        email: user.email,
-        role: user.role,
-        tenantId: user.tenantId._id,
-        tenantName: user.tenantId.name
+    const total = await Contact.countDocuments(filter);
+
+    res.json({
+      contacts,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(total / limit),
+        totalContacts: total,
+        hasNext: skip + contacts.length < total,
+        hasPrev: page > 1
       }
     });
-  } catch (err) {
-    console.error("Login error:", err);
+  } catch (error) {
+    console.error("Get contacts error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+// Get a single contact by ID
+exports.getContact = async (req, res) => {
+  try {
+    const contact = await Contact.findOne({
+      _id: req.params.id,
+      tenantId: req.tenantId,
+      isActive: true
+    }).populate("userId", "email");
+
+    if (!contact) {
+      return res.status(404).json({ error: "Contact not found" });
+    }
+
+    res.json({ contact });
+  } catch (error) {
+    console.error("Get contact error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+// Update a contact
+exports.updateContact = async (req, res) => {
+  try {
+    const contact = await Contact.findOneAndUpdate(
+      {
+        _id: req.params.id,
+        tenantId: req.tenantId,
+        isActive: true
+      },
+      req.body,
+      { new: true, runValidators: true }
+    ).populate("userId", "email");
+
+    if (!contact) {
+      return res.status(404).json({ error: "Contact not found" });
+    }
+
+    res.json({
+      message: "Contact updated successfully",
+      contact
+    });
+  } catch (error) {
+    console.error("Update contact error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+// Delete a contact (soft delete)
+exports.deleteContact = async (req, res) => {
+  try {
+    const contact = await Contact.findOneAndUpdate(
+      {
+        _id: req.params.id,
+        tenantId: req.tenantId,
+        isActive: true
+      },
+      { isActive: false },
+      { new: true }
+    );
+
+    if (!contact) {
+      return res.status(404).json({ error: "Contact not found" });
+    }
+
+    res.json({ message: "Contact deleted successfully" });
+  } catch (error) {
+    console.error("Delete contact error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+// Get contact statistics
+exports.getContactStats = async (req, res) => {
+  try {
+    const totalContacts = await Contact.countDocuments({
+      tenantId: req.tenantId,
+      isActive: true
+    });
+
+    const recentContacts = await Contact.countDocuments({
+      tenantId: req.tenantId,
+      isActive: true,
+      createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
+    });
+
+    const contactsByCompany = await Contact.aggregate([
+      {
+        $match: {
+          tenantId: req.tenantId,
+          isActive: true,
+          company: { $exists: true, $ne: "" }
+        }
+      },
+      {
+        $group: {
+          _id: "$company",
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $sort: { count: -1 }
+      },
+      {
+        $limit: 5
+      }
+    ]);
+
+    res.json({
+      stats: {
+        totalContacts,
+        recentContacts,
+        topCompanies: contactsByCompany
+      }
+    });
+  } catch (error) {
+    console.error("Get contact stats error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 };
